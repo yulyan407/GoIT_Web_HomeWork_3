@@ -2,6 +2,7 @@ import re
 from pathlib import Path
 import sys
 import shutil
+from threading import Thread
 
 CYRILLIC_SYMBOLS = "абвгдеёжзийклмнопрстуфхцчшщъыьэюяєіїґ"
 TRANSLATION = ("a", "b", "v", "g", "d", "e", "e", "j", "z", "i", "j", "k", "l", "m", "n", "o", "p", "r", "s", "t", "u",
@@ -19,14 +20,16 @@ registered_extensions = {'IMAGES': ['JPEG', 'PNG', 'JPG', 'SVG'],
                          'MUSIC': ['MP3', 'OGG', 'WAV', 'AMR'],
                          'ARCHIVES': ['ZIP', 'GZ', 'TAR'],
                          'OTHERS': []}
-unknown_extensions = list()
-extensions = list()
-image_files_list = list()
-video_files_list = list()
-document_files_list = list()
-music_files_list = list()
-archive_files_list = list()
-other_files_list = list()
+unknown_extensions = []
+extensions = []
+image_files_list = []
+video_files_list = []
+document_files_list = []
+music_files_list = []
+archive_files_list = []
+other_files_list = []
+folders = []
+
 
 def get_extensions(file_name):
     """
@@ -35,6 +38,7 @@ def get_extensions(file_name):
     :return: str
     """
     return Path(file_name).suffix[1:].upper()
+
 
 def normalize(name):
     """
@@ -47,6 +51,7 @@ def normalize(name):
     new_name = re.sub(r'\W', "_", new_name)
     return f"{new_name}.{extension}"
 
+
 def hande_file(file_name, folder, dist):
     """
     Move file in param file_name to the target folder = folder / dist
@@ -57,7 +62,8 @@ def hande_file(file_name, folder, dist):
     """
     target_folder = folder / dist
     target_folder.mkdir(exist_ok=True)
-    file_name.rename(target_folder/normalize(file_name.name))
+    file_name.rename(target_folder / normalize(file_name.name))
+
 
 def handle_archive(path, folder, dist):
     """
@@ -85,9 +91,23 @@ def handle_archive(path, folder, dist):
         return
     path.unlink()
 
+
+def grabs_folder(folder):
+    """
+    Grabs all folders in folder
+    :param folder: user path -> Path()
+    :return: None
+    """
+    for item in folder.iterdir():
+        if item.is_dir():
+            if item.name not in registered_extensions.keys():
+                folders.append(item)
+                grabs_folder(item)
+
+
 def scan(folder):
     """
-    Scan all folders and files in folder and sort by extensions
+    Scan all files in folder and sort by extensions
     :param folder: user path -> Path()
     :return: unknown_extensions -> list,
             extensions -> list,
@@ -99,31 +119,28 @@ def scan(folder):
             other_files_list -> list,
     """
     for item in folder.iterdir():
-        if item.is_dir():
-            if item.name not in registered_extensions.keys():
-                scan(item)
-            continue
+        if item.is_file():
+            extension = get_extensions(file_name=item.name)
+            new_name = folder / item.name
+            if extension in registered_extensions['IMAGES']:
+                image_files_list.append(new_name)
+                extensions.append(extension)
+            elif extension in registered_extensions['VIDEOS']:
+                video_files_list.append(new_name)
+                extensions.append(extension)
+            elif extension in registered_extensions['DOCUMENTS']:
+                document_files_list.append(new_name)
+                extensions.append(extension)
+            elif extension in registered_extensions['MUSIC']:
+                music_files_list.append(new_name)
+                extensions.append(extension)
+            elif extension in registered_extensions['ARCHIVES']:
+                archive_files_list.append(new_name)
+                extensions.append(extension)
+            else:
+                other_files_list.append(new_name)
+                unknown_extensions.append(extension)
 
-        extension = get_extensions(file_name=item.name)
-        new_name = folder/item.name
-        if extension in registered_extensions['IMAGES']:
-            image_files_list.append(new_name)
-            extensions.append(extension)
-        elif extension in registered_extensions['VIDEOS']:
-            video_files_list.append(new_name)
-            extensions.append(extension)
-        elif extension in registered_extensions['DOCUMENTS']:
-            document_files_list.append(new_name)
-            extensions.append(extension)
-        elif extension in registered_extensions['MUSIC']:
-            music_files_list.append(new_name)
-            extensions.append(extension)
-        elif extension in registered_extensions['ARCHIVES']:
-            archive_files_list.append(new_name)
-            extensions.append(extension)
-        else:
-            other_files_list.append(new_name)
-            unknown_extensions.append(extension)
 
 def group_files(folder):
     """
@@ -148,6 +165,7 @@ def group_files(folder):
         target_folder.mkdir(exist_ok=True)
         file.rename(target_folder / file.name)
 
+
 def remove_empty_folders(path):
     """
     Remove empty folders
@@ -167,7 +185,17 @@ def main():
     path = sys.argv[1]
     print(f"Start in {path}")
 
-    group_files(Path(path))
+    folders.append(Path(path))
+    grabs_folder(Path(path))
+    print(f"All folders: {folders}\n")
+
+    threads = []
+    for folder in folders:
+        thread = Thread(target=group_files, args=(folder,))
+        thread.start()
+        threads.append(thread)
+
+    [thread.join() for thread in threads]
 
     remove_empty_folders(Path(path))
 
@@ -179,6 +207,7 @@ def main():
     print(f"Unknown files: {other_files_list}\n")
     print(f"All extensions: {set(extensions)}\n")
     print(f"Unknown extensions: {set(unknown_extensions)}\n")
+
 
 if __name__ == '__main__':
     main()
